@@ -156,20 +156,44 @@ elif is_admin_logged_in:
             del st.session_state['admin_auth']; st.rerun()
 
     # --- VIEW 1: ANALYTICS ---
+    # --- VIEW 1: ANALYTICS ---
     if st.session_state['admin_view'] == 'Analytics':
         st.title("🚀 Executive Analytics")
-        curr_rev, prev_rev, growth, yearly, count = admin_sys.get_monthly_comparison()
+        
+        # FIX: Unpack 6 values now (added lifetime_rev)
+        curr_rev, prev_rev, growth, last_year_rev, count, lifetime_rev = admin_sys.get_monthly_comparison()
 
         if st.session_state['report_view'] == "Overview":
             st.subheader("📊 General Overview")
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Monthly Revenue", f"₹{curr_rev}", f"{growth}% vs Last Month")
-            m2.metric("Yearly Revenue", f"₹{yearly}")
-            m3.metric("Total Sales (Month)", count)
-            m4.metric("Previous Month Rev", f"₹{prev_rev}")
+            
+            # ROW 1: Immediate Monthly Stats
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Current Month Revenue", f"₹{curr_rev:,.0f}", f"{growth}% vs Last Month")
+            m2.metric("Last Month Revenue", f"₹{prev_rev:,.0f}")
+            m3.metric("This Month Sales Count", count)
+            
+            st.write("") # Spacer
+            
+            # ROW 2: The Big Picture (2025 vs Lifetime)
+            b1, b2 = st.columns(2)
+            with b1:
+                st.markdown(f"""
+                    <div style="background-color: #d1e7dd; padding: 20px; border-radius: 10px; border-left: 5px solid #198754;">
+                        <h4 style="color: #198754; margin:0;">Total Revenue (Last Year)</h4>
+                        <h1 style="margin:0;">₹{last_year_rev:,.0f}</h1>
+                    </div>
+                """, unsafe_allow_html=True)
+            with b2:
+                st.markdown(f"""
+                    <div style="background-color: #cfe2ff; padding: 20px; border-radius: 10px; border-left: 5px solid #0d6efd;">
+                        <h4 style="color: #0d6efd; margin:0;">Lifetime Revenue (All Time)</h4>
+                        <h1 style="margin:0;">₹{lifetime_rev:,.0f}</h1>
+                    </div>
+                """, unsafe_allow_html=True)
+
             st.markdown("---")
             
-            with st.expander("📈 Daily Revenue Trend", expanded=True):
+            with st.expander(" Revenue Trend", expanded=True):
                 df_trend = admin_sys.get_revenue_trend()
                 if not df_trend.empty:
                     fig = px.line(df_trend, x='Date', y='Revenue', markers=True, template="plotly_white")
@@ -202,43 +226,83 @@ elif is_admin_logged_in:
                 st.dataframe(df_year, use_container_width=True)
             else: st.info("No yearly data available.")
 
-    # --- VIEW 2: COMPREHENSIVE REPORTS (NEW) ---
+    # --- VIEW 2: HISTORICAL ARCHIVE (Detailed Reports) ---
     elif st.session_state['admin_view'] == 'Comprehensive':
-        st.title("📑 Annual Detailed Report")
-        st.markdown("Generate a full breakdown of Revenue, Active Users, and Plan Popularity.")
+        st.title("📑 Historical Archive & Reports")
         
-        # Year Selector
-        sel_year = st.selectbox("Select Financial Year", [2024, 2025, 2026], index=2)
+        # 1. TABS: Switch between Yearly Overview and Monthly Drill-Down
+        tab_archive, tab_annual = st.tabs(["🗓️ Monthly Archive (Drill-Down)", "📊 Annual Comprehensive"])
         
-        if st.button(f"Generate Report for {sel_year}", type="primary"):
-            df_comp = admin_sys.get_yearly_comprehensive_report(sel_year)
-            
-            if not df_comp.empty:
-                # 1. Main Table
-                st.subheader(f"📅 Master Report: {sel_year}")
-                st.dataframe(df_comp.style.format({"Revenue (₹)": "₹{:.2f}", "Growth (%)": "{:+.1f}%"}), use_container_width=True)
+        with tab_archive:
+            st.subheader("🔍 Retrieve Fixed Past Records")
+            st.markdown("Select a Year and Month to view the frozen historical data.")
+
+            # Selectors
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                sel_year = st.selectbox("Select Year", ["2024", "2025", "2026"], key="hist_year")
+            with c2:
+                sel_month = st.selectbox("Select Month", [
+                    "January", "February", "March", "April", "May", "June", 
+                    "July", "August", "September", "October", "November", "December"
+                ], key="hist_month")
+            with c3:
+                st.write("") # Spacer
+                if st.button("📂 Fetch Monthly Report", type="primary", use_container_width=True):
+                    st.session_state['show_history'] = True
+
+            st.divider()
+
+            # Logic to Show Data
+            if st.session_state.get('show_history'):
+                # Call backend function
+                rev, sales, df_hist = admin_sys.get_specific_month_report(sel_year, sel_month)
                 
-                # 2. Download Button
-                csv = df_comp.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Download Full Report (CSV)", csv, f"Annual_Report_{sel_year}.csv", "text/csv")
-                
-                st.divider()
-                
-                # 3. Visualizations
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.markdown("**User Activity vs Revenue**")
-                    fig_dual = px.bar(df_comp, x='Month', y='Revenue (₹)', color='Active Users', title="Revenue & Traffic Correlation")
-                    st.plotly_chart(fig_dual, use_container_width=True)
+                if not df_hist.empty:
+                    st.success(f"✅ Archive Found: {sel_month} {sel_year}")
                     
-                with c2:
-                    st.markdown("**Plan Sales Distribution**")
-                    # Melt for grouped bar chart
-                    df_melt = df_comp.melt(id_vars=['Month'], value_vars=['Silver Sales', 'Gold Sales', 'Platinum Sales'], var_name='Plan', value_name='Count')
-                    fig_sales = px.bar(df_melt, x='Month', y='Count', color='Plan', barmode='group', title="Monthly Sales by Plan")
-                    st.plotly_chart(fig_sales, use_container_width=True)
-            else:
-                st.error(f"No data found for the year {sel_year}.")
+                    # Metrics
+                    m1, m2 = st.columns(2)
+                    m1.metric("Total Revenue", f"₹{rev}")
+                    m2.metric("Total Sales", sales)
+                    
+                    # Data Table
+                    st.dataframe(df_hist, use_container_width=True)
+                    
+                    # CSV Download
+                    csv_data = df_hist.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Download This Report", csv_data, f"Report_{sel_year}_{sel_month}.csv", "text/csv")
+                else:
+                    st.warning(f"⚠️ No records found in the archive for {sel_month} {sel_year}.")
+
+        with tab_annual:
+            st.subheader("📅 Full Year Overview")
+            sel_year_comp = st.selectbox("Select Financial Year", [2024, 2025, 2026], index=2, key="comp_year")
+            
+            if st.button(f"Generate Annual Report for {sel_year_comp}", type="primary"):
+                df_comp = admin_sys.get_yearly_comprehensive_report(sel_year_comp)
+                
+                if not df_comp.empty:
+                    st.dataframe(df_comp.style.format({"Revenue (₹)": "₹{:.2f}", "Growth (%)": "{:+.1f}%"}), use_container_width=True)
+                    
+                    # Download
+                    csv = df_comp.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Download Annual CSV", csv, f"Annual_Report_{sel_year_comp}.csv", "text/csv")
+                    
+                    # Charts
+                    st.divider()
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.markdown("**User Activity vs Revenue**")
+                        fig_dual = px.bar(df_comp, x='Month', y='Revenue (₹)', color='Active Users', title="Revenue & Traffic")
+                        st.plotly_chart(fig_dual, use_container_width=True)
+                    with c2:
+                        st.markdown("**Plan Sales Distribution**")
+                        df_melt = df_comp.melt(id_vars=['Month'], value_vars=['Silver Sales', 'Gold Sales', 'Platinum Sales'], var_name='Plan', value_name='Count')
+                        fig_sales = px.bar(df_melt, x='Month', y='Count', color='Plan', barmode='group')
+                        st.plotly_chart(fig_sales, use_container_width=True)
+                else:
+                    st.error(f"No data found for {sel_year_comp}.")
 
     # --- VIEW 3: DATABASE ---
     elif st.session_state['admin_view'] == 'Database':
