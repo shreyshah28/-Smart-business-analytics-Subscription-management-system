@@ -1,0 +1,260 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+from backend import UserModule, SubscriptionManager, ActivityTracker, AdminAnalytics
+from database import DB
+
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="Edelhaus Analytics", page_icon="📊", layout="wide")
+
+# --- INIT ---
+db = DB()
+user_sys = UserModule()
+sub_sys = SubscriptionManager()
+tracker = ActivityTracker()
+admin_sys = AdminAnalytics()
+
+# --- CSS STYLING ---
+st.markdown("""
+<style>
+    .metric-card { background-color: #f0f2f6; border-radius: 10px; padding: 15px; border-left: 5px solid #ff4b4b; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
+    .nav-btn { width: 100%; text-align: left; padding: 10px; }
+    div.stButton > button:first-child { text-align: left; border: none; background: transparent; color: #31333F; width: 100%; } 
+    div.stButton > button:first-child:hover { background: #f0f2f6; color: #ff4b4b; }
+</style>
+""", unsafe_allow_html=True)
+
+# ================= STATE MANAGEMENT =================
+is_user_logged_in = 'user_id' in st.session_state
+is_admin_logged_in = 'admin_auth' in st.session_state
+
+if 'admin_view' not in st.session_state:
+    st.session_state['admin_view'] = 'Analytics'
+if 'report_view' not in st.session_state:
+    st.session_state['report_view'] = 'Overview'
+
+# ================= 1. TOP LEVEL NAVIGATION =================
+if not is_user_logged_in and not is_admin_logged_in:
+    st.sidebar.title("🚪 Gateway")
+    role_choice = st.sidebar.radio("Select Module", ["👤 User Module", "🛠️ Admin Module"])
+
+    if role_choice == "👤 User Module":
+        st.title("👤 User Access Portal")
+        tab1, tab2 = st.tabs(["Login", "New Registration"])
+        with tab1:
+            email = st.text_input("Email Address")
+            password = st.text_input("Password", type="password")
+            if st.button("Login", type="primary"):
+                user = user_sys.login(email, password)
+                if user:
+                    st.session_state.update({'user_id': user[0], 'name': user[1], 'act_id': tracker.log_in(user[0])})
+                    st.success("Login Successful!"); st.rerun()
+                else: st.error("Invalid Credentials")
+
+        with tab2:
+            st.subheader("Create New Account")
+            c1, c2 = st.columns(2)
+            with c1:
+                reg_name = st.text_input("Full Name")
+                reg_pass = st.text_input("Create Password", type="password")
+                reg_age = st.number_input("Age", 18, 100)
+            with c2:
+                reg_email = st.text_input("Email")
+                reg_mobile = st.text_input("Mobile No")
+                reg_country = st.selectbox("Country", ["India", "USA", "UK", "Canada", "Germany"])
+            if st.button("Register Now"):
+                res, msg = user_sys.register(reg_name, reg_email, reg_pass, reg_mobile, reg_age, reg_country)
+                if res: st.success(msg)
+                else: st.error(msg)
+
+    elif role_choice == "🛠️ Admin Module":
+        st.title("🛠️ Administrator Login")
+        ad_id = st.text_input("Admin ID")
+        ad_pass = st.text_input("Admin Password", type="password")
+        if st.button("Access Dashboard"):
+            if ad_id == "admin" and ad_pass == "admin123":
+                st.session_state['admin_auth'] = True; st.rerun()
+            else: st.error("Access Denied")
+
+# ================= 2. USER DASHBOARD =================
+elif is_user_logged_in:
+    st.sidebar.title(f"👋 Hi, {st.session_state['name']}")
+    user_menu = st.sidebar.radio("Menu", ["🏠 Main Menu (Plans)", "⚙️ Settings", "🧾 My Invoices"])
+    
+    if st.sidebar.button("Logout"):
+        tracker.log_out(st.session_state['act_id'])
+        del st.session_state['user_id']
+        st.rerun()
+
+    if user_menu == "🏠 Main Menu (Plans)":
+        st.subheader("💎 Choose Your Subscription")
+        c1, c2, c3 = st.columns(3)
+        def plan_card(col, name, price, color, btn_key):
+            with col:
+                st.markdown(f"<div style='background:{color}; padding:20px; border-radius:10px; color:white; text-align:center;'><h3>{name}</h3><h1>₹{price}</h1><p>/month</p></div>", unsafe_allow_html=True)
+                if st.button(f"Buy {name}", key=btn_key):
+                    txt = sub_sys.buy_plan(st.session_state['user_id'], name, price)
+                    st.success("Activated!"); st.download_button("Receipt", txt, "Invoice.txt")
+        plan_card(c1, "Silver", 199, "#6c757d", "btn_s")
+        plan_card(c2, "Gold", 399, "#ffc107", "btn_g")
+        plan_card(c3, "Platinum", 799, "#0d6efd", "btn_p")
+
+    elif user_menu == "⚙️ Settings":
+        st.subheader("📝 Update Your Profile")
+        curr_data = user_sys.get_user_details(st.session_state['user_id'])
+        with st.form("update_form"):
+            new_name = st.text_input("Full Name", value=curr_data[0])
+            new_email = st.text_input("Email", value=curr_data[1])
+            new_mobile = st.text_input("Mobile No", value=curr_data[2])
+            new_country = st.text_input("Country", value=curr_data[3])
+            new_pass = st.text_input("New Password", type="password")
+            if st.form_submit_button("Save Changes"):
+                p_to_save = new_pass if new_pass else "1234" 
+                res, msg = user_sys.update_profile(st.session_state['user_id'], new_name, new_email, p_to_save, new_mobile, new_country)
+                if res: st.success(msg)
+                else: st.error(msg)
+
+    elif user_menu == "🧾 My Invoices":
+        st.subheader("📜 Invoice History")
+        df_inv = sub_sys.get_user_invoices(st.session_state['user_id'])
+        if not df_inv.empty:
+            st.dataframe(df_inv, use_container_width=True)
+            last_rec = df_inv.iloc[0]
+            inv_txt = sub_sys.generate_invoice_text(st.session_state['user_id'], last_rec['plan_name'], last_rec['amount'], last_rec['start_date'])
+            st.download_button("📥 Download Latest Invoice", inv_txt, f"Invoice.txt")
+        else: st.info("No purchase history found.")
+
+# ================= 3. ADMIN DASHBOARD (UPDATED) =================
+elif is_admin_logged_in:
+    
+    with st.sidebar:
+        st.title("🛠️ Admin Panel")
+        
+        if st.button("📊 Analytics Dashboard", use_container_width=True):
+            st.session_state['admin_view'] = 'Analytics'
+            st.rerun()
+
+        if st.session_state['admin_view'] == 'Analytics':
+            st.markdown("### 📑 Report Selection")
+            report_select = st.radio("Show Report:", ["Overview", "Month-to-Month", "Yearly Sales"], label_visibility="collapsed")
+            st.session_state['report_view'] = report_select
+
+        if st.button("📑 Detailed Reports", use_container_width=True):
+             st.session_state['admin_view'] = 'Comprehensive'
+             st.rerun()
+
+        if st.button("🗂️ Database Manager", use_container_width=True):
+            st.session_state['admin_view'] = 'Database'
+            st.rerun()
+
+        if st.button("🚨 Security Audit", use_container_width=True):
+            st.session_state['admin_view'] = 'Security'
+            st.rerun()
+
+        st.markdown("---")
+        if st.button("Logout Admin"):
+            del st.session_state['admin_auth']; st.rerun()
+
+    # --- VIEW 1: ANALYTICS ---
+    if st.session_state['admin_view'] == 'Analytics':
+        st.title("🚀 Executive Analytics")
+        curr_rev, prev_rev, growth, yearly, count = admin_sys.get_monthly_comparison()
+
+        if st.session_state['report_view'] == "Overview":
+            st.subheader("📊 General Overview")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Monthly Revenue", f"₹{curr_rev}", f"{growth}% vs Last Month")
+            m2.metric("Yearly Revenue", f"₹{yearly}")
+            m3.metric("Total Sales (Month)", count)
+            m4.metric("Previous Month Rev", f"₹{prev_rev}")
+            st.markdown("---")
+            
+            with st.expander("📈 Daily Revenue Trend", expanded=True):
+                df_trend = admin_sys.get_revenue_trend()
+                if not df_trend.empty:
+                    fig = px.line(df_trend, x='Date', y='Revenue', markers=True, template="plotly_white")
+                    fig.update_traces(line_color='#ff4b4b', line_width=3)
+                    st.plotly_chart(fig, use_container_width=True)
+                else: st.info("Not enough data for trends.")
+
+            with st.expander("🍕 Plan Popularity Breakdown", expanded=True):
+                df_subs = admin_sys.get_all_data("subscriptions")
+                if not df_subs.empty:
+                    fig2 = px.pie(df_subs, names='plan_name', hole=0.4, template="plotly_white", color_discrete_sequence=['#C0C0C0', '#FFD700', '#E5E4E2'])
+                    st.plotly_chart(fig2, use_container_width=True)
+                else: st.info("No subscriptions yet.")
+
+        elif st.session_state['report_view'] == "Month-to-Month":
+            st.subheader("🗓️ Month-to-Month Performance Report")
+            df_month = admin_sys.get_monthly_breakdown()
+            if not df_month.empty:
+                fig_m = px.bar(df_month, x='Month', y='Revenue', text_auto=True, template="plotly_white", color='Revenue', color_continuous_scale='Blues')
+                st.plotly_chart(fig_m, use_container_width=True)
+                st.dataframe(df_month, use_container_width=True)
+            else: st.info("No monthly data available.")
+
+        elif st.session_state['report_view'] == "Yearly Sales":
+            st.subheader("📅 Yearly Sales Report")
+            df_year = admin_sys.get_yearly_breakdown()
+            if not df_year.empty:
+                fig_y = px.bar(df_year, x='Year', y='Revenue', text_auto=True, template="plotly_white", color='Revenue', color_continuous_scale='Greens')
+                st.plotly_chart(fig_y, use_container_width=True)
+                st.dataframe(df_year, use_container_width=True)
+            else: st.info("No yearly data available.")
+
+    # --- VIEW 2: COMPREHENSIVE REPORTS (NEW) ---
+    elif st.session_state['admin_view'] == 'Comprehensive':
+        st.title("📑 Annual Detailed Report")
+        st.markdown("Generate a full breakdown of Revenue, Active Users, and Plan Popularity.")
+        
+        # Year Selector
+        sel_year = st.selectbox("Select Financial Year", [2024, 2025, 2026], index=2)
+        
+        if st.button(f"Generate Report for {sel_year}", type="primary"):
+            df_comp = admin_sys.get_yearly_comprehensive_report(sel_year)
+            
+            if not df_comp.empty:
+                # 1. Main Table
+                st.subheader(f"📅 Master Report: {sel_year}")
+                st.dataframe(df_comp.style.format({"Revenue (₹)": "₹{:.2f}", "Growth (%)": "{:+.1f}%"}), use_container_width=True)
+                
+                # 2. Download Button
+                csv = df_comp.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Download Full Report (CSV)", csv, f"Annual_Report_{sel_year}.csv", "text/csv")
+                
+                st.divider()
+                
+                # 3. Visualizations
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("**User Activity vs Revenue**")
+                    fig_dual = px.bar(df_comp, x='Month', y='Revenue (₹)', color='Active Users', title="Revenue & Traffic Correlation")
+                    st.plotly_chart(fig_dual, use_container_width=True)
+                    
+                with c2:
+                    st.markdown("**Plan Sales Distribution**")
+                    # Melt for grouped bar chart
+                    df_melt = df_comp.melt(id_vars=['Month'], value_vars=['Silver Sales', 'Gold Sales', 'Platinum Sales'], var_name='Plan', value_name='Count')
+                    fig_sales = px.bar(df_melt, x='Month', y='Count', color='Plan', barmode='group', title="Monthly Sales by Plan")
+                    st.plotly_chart(fig_sales, use_container_width=True)
+            else:
+                st.error(f"No data found for the year {sel_year}.")
+
+    # --- VIEW 3: DATABASE ---
+    elif st.session_state['admin_view'] == 'Database':
+        st.subheader("🗂️ System Database")
+        tbl = st.selectbox("Select Table to View", ["users", "subscriptions", "user_activity"])
+        df = admin_sys.get_all_data(tbl)
+        st.dataframe(df, use_container_width=True, height=500)
+        if not df.empty:
+            st.download_button("📥 Download CSV", df.to_csv(index=False), f"{tbl}_data.csv")
+
+    # --- VIEW 4: SECURITY ---
+    elif st.session_state['admin_view'] == 'Security':
+        st.subheader("🚨 Security Audit")
+        risks = admin_sys.detect_security_risks()
+        if not risks.empty:
+            st.error(f"⚠️ Detected {len(risks)} Suspicious Activities!")
+            st.dataframe(risks, use_container_width=True)
+        else:
+            st.success("✅ No Anomalies Detected.")

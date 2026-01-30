@@ -1,0 +1,12 @@
+
+        ===================================
+        INVOICE - DATA ANALYTICS SYSTEM
+        ===================================
+        User ID: 2
+        Date: 2026-01-28 00:04:44
+        Plan Selected: Gold
+        Amount Paid: INR 399
+        Status: Paid
+        ===================================
+        Thank you for your business!
+        
