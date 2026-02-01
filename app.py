@@ -156,11 +156,10 @@ elif is_admin_logged_in:
             del st.session_state['admin_auth']; st.rerun()
 
     # --- VIEW 1: ANALYTICS ---
-    # --- VIEW 1: ANALYTICS ---
     if st.session_state['admin_view'] == 'Analytics':
         st.title("🚀 Executive Analytics")
         
-        # FIX: Unpack 6 values now (added lifetime_rev)
+        # Unpack values including lifetime revenue
         curr_rev, prev_rev, growth, last_year_rev, count, lifetime_rev = admin_sys.get_monthly_comparison()
 
         if st.session_state['report_view'] == "Overview":
@@ -193,20 +192,69 @@ elif is_admin_logged_in:
 
             st.markdown("---")
             
-            with st.expander(" Revenue Trend", expanded=True):
-                df_trend = admin_sys.get_revenue_trend()
-                if not df_trend.empty:
+            # Trends and Plans
+            c1, c2 = st.columns(2)
+            with c1:
+                 st.markdown("📈 **Revenue Trend**")
+                 df_trend = admin_sys.get_revenue_trend()
+                 if not df_trend.empty:
                     fig = px.line(df_trend, x='Date', y='Revenue', markers=True, template="plotly_white")
                     fig.update_traces(line_color='#ff4b4b', line_width=3)
                     st.plotly_chart(fig, use_container_width=True)
-                else: st.info("Not enough data for trends.")
-
-            with st.expander("🍕 Plan Popularity Breakdown", expanded=True):
+                 else: st.info("Not enough data for trends.")
+            
+            with c2:
+                st.markdown("🍕 **Plan Popularity**")
                 df_subs = admin_sys.get_all_data("subscriptions")
                 if not df_subs.empty:
                     fig2 = px.pie(df_subs, names='plan_name', hole=0.4, template="plotly_white", color_discrete_sequence=['#C0C0C0', '#FFD700', '#E5E4E2'])
                     st.plotly_chart(fig2, use_container_width=True)
                 else: st.info("No subscriptions yet.")
+            
+            st.markdown("---")
+            
+            # --- NEW FEATURES (Demographics & Conversion) ---
+            st.subheader("🌍 User Demographics & Conversion")
+            
+            # Fetch Data
+            # NOTE: Ensure you have added get_demographics_data() and get_recent_transactions() to backend.py
+            try:
+                df_country, total_u, paid_u = admin_sys.get_demographics_data()
+                df_recent = admin_sys.get_recent_transactions()
+                
+                # ROW 3: Country & Conversion Charts
+                c3, c4 = st.columns(2)
+                
+                with c3:
+                    st.markdown("**📍 Users by Country**")
+                    if not df_country.empty:
+                        fig_map = px.bar(df_country, x='country', y='count', color='count', template="plotly_white", color_continuous_scale='Viridis')
+                        st.plotly_chart(fig_map, use_container_width=True)
+                    else: st.info("No user data available.")
+
+                with c4:
+                    st.markdown("**💰 Conversion Rate (Free vs Paid)**")
+                    if total_u > 0:
+                        free_u = total_u - paid_u
+                        conv_data = pd.DataFrame({
+                            'Status': ['Premium Subscribers', 'Free Users'],
+                            'Count': [paid_u, free_u]
+                        })
+                        fig_conv = px.pie(conv_data, names='Status', values='Count', hole=0.6, color_discrete_sequence=['#0d6efd', '#e9ecef'])
+                        st.plotly_chart(fig_conv, use_container_width=True)
+                        conv_rate = round((paid_u / total_u) * 100, 1)
+                        st.caption(f"🚀 **{conv_rate}%** of your registered users have bought a plan.")
+                    else: st.info("No users registered yet.")
+
+                # ROW 4: Recent Transactions
+                st.markdown("### 🕒 Recent Purchases")
+                if not df_recent.empty:
+                    st.dataframe(df_recent, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No recent transactions found.")
+                    
+            except AttributeError:
+                st.error("⚠️ Please update backend.py with the new functions (get_demographics_data) to see these charts.")
 
         elif st.session_state['report_view'] == "Month-to-Month":
             st.subheader("🗓️ Month-to-Month Performance Report")
@@ -255,7 +303,6 @@ elif is_admin_logged_in:
 
             # Logic to Show Data
             if st.session_state.get('show_history'):
-                # Call backend function
                 rev, sales, df_hist = admin_sys.get_specific_month_report(sel_year, sel_month)
                 
                 if not df_hist.empty:
@@ -285,11 +332,9 @@ elif is_admin_logged_in:
                 if not df_comp.empty:
                     st.dataframe(df_comp.style.format({"Revenue (₹)": "₹{:.2f}", "Growth (%)": "{:+.1f}%"}), use_container_width=True)
                     
-                    # Download
                     csv = df_comp.to_csv(index=False).encode('utf-8')
                     st.download_button("📥 Download Annual CSV", csv, f"Annual_Report_{sel_year_comp}.csv", "text/csv")
                     
-                    # Charts
                     st.divider()
                     c1, c2 = st.columns(2)
                     with c1:

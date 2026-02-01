@@ -279,3 +279,25 @@ class AdminAnalytics:
         total_sales = len(df)
         
         return total_revenue, total_sales, df
+    # ... inside AdminAnalytics class ...
+
+    def get_demographics_data(self):
+        # 1. Get Users by Country
+        query_country = "SELECT country, COUNT(*) as count FROM users GROUP BY country ORDER BY count DESC"
+        df_country = pd.read_sql(query_country, db.conn)
+        
+        # 2. Get Conversion Stats (Total Users vs Paid Users)
+        total_users = pd.read_sql("SELECT COUNT(*) FROM users", db.conn).iloc[0,0]
+        paid_users = pd.read_sql("SELECT COUNT(DISTINCT user_id) FROM subscriptions", db.conn).iloc[0,0]
+        
+        return df_country, total_users, paid_users
+        
+    def get_recent_transactions(self):
+        # Get last 5 sales with User Name
+        query = """
+            SELECT u.fullname, s.plan_name, s.amount, s.start_date 
+            FROM subscriptions s
+            JOIN users u ON s.user_id = u.user_id
+            ORDER BY s.start_date DESC LIMIT 5
+        """
+        return pd.read_sql(query, db.conn)
