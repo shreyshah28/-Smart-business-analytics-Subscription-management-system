@@ -17,9 +17,9 @@ admin_sys = AdminAnalytics()
 # --- CSS STYLING ---
 st.markdown("""
 <style>
-    .metric-card { background-color: #f0f2f6; border-radius: 10px; padding: 15px; border-left: 5px solid #ff4b4b; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
+    .metric-card { background-color: #f0f2f6; border-radius: 10px; padding: 15px; border-left: 5px solid #ff4b4b; }
     .nav-btn { width: 100%; text-align: left; padding: 10px; }
-    div.stButton > button:first-child { text-align: left; border: none; background: transparent; color: #31333F; width: 100%; } 
+    div.stButton > button:first-child { text-align: left; width: 100%; } 
     div.stButton > button:first-child:hover { background: #f0f2f6; color: #ff4b4b; }
 </style>
 """, unsafe_allow_html=True)
@@ -295,8 +295,8 @@ elif is_admin_logged_in:
                     "July", "August", "September", "October", "November", "December"
                 ], key="hist_month")
             with c3:
-                st.write("") # Spacer
-                if st.button("📂 Fetch Monthly Report", type="primary", use_container_width=True):
+                # st.write("") # Spacer
+                if st.button("📂 Fetch Monthly Report"):
                     st.session_state['show_history'] = True
 
             st.divider()
