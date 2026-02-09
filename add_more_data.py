@@ -3,7 +3,6 @@ import random
 import hashlib
 from datetime import datetime, timedelta
 
-# --- CONFIGURATION ---
 DB_PASS = "shrey28"
 
 try:
@@ -14,59 +13,52 @@ try:
 except Exception as e:
     print("❌ Connection Failed:", e); exit()
 
-print("🚀 Adding NEW diverse data...")
+print("🚀 Simulating NEW OTT subscriptions for Feb 2026...")
 
 def h(p): return hashlib.sha256(p.encode()).hexdigest()
 
-names = ["Romil", "Shrey", "Mehul", "Neer", "Maya", "Abhay", "Nidhi", "Pavan", "Yash", "Rutvik", "Aditya", "Soham"]
-last_names = ["Shah", "Patel", "Mehta", "Trivedi", "Joshi", "Vyas", "Desai", "Modi", "Bhatt", "Soni"]
+names = ["Romil", "Shrey", "Mehul", "Neer", "Maya", "Abhay", "Nidhi", "Pavan", "Yash", "Rutvik"]
+last_names = ["Shah", "Patel", "Mehta", "Trivedi", "Joshi", "Vyas", "Desai"]
+countries = ["India", "USA", "UK", "Germany", "Canada", "France"]
+ott_services = ["Netflix", "Amazon Prime", "Disney+ Hotstar"]
 
-# --- NEW: List of Countries ---
-countries = ["India", "USA", "UK", "Germany", "Canada", "France", "Australia", "Japan"]
-
-users_to_add = 30
-target_year = 2026
-target_month = 2 
+users_to_add = 20
 new_users_count = 0
 
 for _ in range(users_to_add):
-    fname = random.choice(names)
-    lname = random.choice(last_names)
-    full_name = f"{fname} {lname}"
-    email = f"{fname.lower()}.{lname.lower()}{random.randint(100000,999999)}@demo.com"
-    
-    # --- FIX: Pick a Random Country ---
+    full_name = f"{random.choice(names)} {random.choice(last_names)}"
+    email = f"{full_name.replace(' ', '').lower()}{random.randint(10000,99999)}@stream.com"
     user_country = random.choice(countries)
     
-    day = random.randint(1, 28) 
-    login_time = datetime(target_year, target_month, day, random.randint(9, 23), random.randint(0, 59))
-    session_mins = random.randint(5, 180)
-    logout_time = login_time + timedelta(minutes=session_mins)
+    # Target: February 2026
+    day = random.randint(1, 9) # Up to current date
+    login_time = datetime(2026, 2, day, random.randint(9, 23), random.randint(0, 59))
+    session_mins = random.randint(10, 120)
 
     try:
-        # Insert User (Using variable user_country)
         cursor.execute("""
             INSERT INTO users (fullname, email, password, mobile, age, country, created_at) 
             VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING user_id
-        """, (full_name, email, h("1234"), "9876543210", random.randint(18, 50), user_country, login_time))
+        """, (full_name, email, h("1234"), "9999988888", random.randint(18, 45), user_country, login_time))
         uid = cursor.fetchone()[0]
 
         cursor.execute("""
             INSERT INTO user_activity (user_id, login_time, logout_time, session_minutes) 
             VALUES (%s, %s, %s, %s)
-        """, (uid, login_time, logout_time, session_mins))
+        """, (uid, login_time, login_time + timedelta(minutes=session_mins), session_mins))
 
         if random.random() > 0.2:
-            plan_data = random.choice([("Silver", 199), ("Gold", 399), ("Platinum", 799)])
+            service = random.choice(ott_services)
+            plan_data = random.choice([("Standard", 499), ("Premium", 799)])
+            
             cursor.execute("""
-                INSERT INTO subscriptions (user_id, plan_name, amount, start_date, end_date) 
-                VALUES (%s, %s, %s, %s, %s)
-            """, (uid, plan_data[0], plan_data[1], login_time, login_time + timedelta(days=30)))
+                INSERT INTO subscriptions (user_id, service_type, plan_name, amount, start_date, end_date) 
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (uid, service, plan_data[0], plan_data[1], login_time, login_time + timedelta(days=30)))
         
         new_users_count += 1
+    except:
+        continue
 
-    except Exception as e:
-        print(f"⚠️ Skipped duplicate email: {email}")
-
-print(f"✅ SUCCESS! Added {new_users_count} new users from mixed countries.")
+print(f"✅ SUCCESS! Added {new_users_count} new subscriptions to the database.")
 conn.close()

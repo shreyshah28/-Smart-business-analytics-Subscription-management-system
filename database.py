@@ -6,7 +6,7 @@ import sys
 DB_HOST = "localhost"
 DB_NAME = "subscription_sys"
 DB_USER = "postgres"
-DB_PASS = "shrey28"  # <--- VERIFY THIS PASSWORD
+DB_PASS = "shrey28" 
 
 class DB:
     def __init__(self):
@@ -37,12 +37,12 @@ class DB:
                 age INTEGER, 
                 country VARCHAR(50), 
                 role VARCHAR(20) DEFAULT 'USER', 
-                is_active BOOLEAN DEFAULT TRUE, 
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''',
             '''CREATE TABLE IF NOT EXISTS subscriptions (
                 subscription_id SERIAL PRIMARY KEY, 
                 user_id INTEGER REFERENCES users(user_id), 
+                service_type VARCHAR(50), 
                 plan_name VARCHAR(50), 
                 amount DECIMAL(10,2), 
                 start_date TIMESTAMP, 
@@ -57,16 +57,19 @@ class DB:
                 session_minutes INTEGER DEFAULT 0
             )'''
         ]
-        
         for cmd in commands:
             self.cursor.execute(cmd)
 
         # Create Admin
         try:
             admin_pass = hashlib.sha256("admin123".encode()).hexdigest()
-            self.cursor.execute("INSERT INTO users (fullname, email, password, role) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING", 
-                               ("System Admin", "admin", admin_pass, "ADMIN"))
-        except: pass
+            self.cursor.execute("""
+                INSERT INTO users (fullname, email, password, role) 
+                VALUES (%s, %s, %s, %s) 
+                ON CONFLICT (email) DO NOTHING
+            """, ("System Admin", "admin", admin_pass, "ADMIN"))
+        except Exception as e:
+            print(f"Admin Setup Note: {e}")
 
     def log_visitor(self):
         if self.cursor:

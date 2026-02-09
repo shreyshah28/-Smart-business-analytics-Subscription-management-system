@@ -5,10 +5,14 @@ from backend import UserModule, SubscriptionManager, ActivityTracker, AdminAnaly
 from database import DB
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Edelhaus Analytics", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Edelhaus Streaming", page_icon="🎬", layout="wide")
 
 # --- INIT ---
-db = DB()
+@st.cache_resource
+def init_db():
+    return DB()
+
+db = init_db()
 user_sys = UserModule()
 sub_sys = SubscriptionManager()
 tracker = ActivityTracker()
@@ -17,10 +21,19 @@ admin_sys = AdminAnalytics()
 # --- CSS STYLING ---
 st.markdown("""
 <style>
-    .metric-card { background-color: #f0f2f6; border-radius: 10px; padding: 15px; border-left: 5px solid #ff4b4b; }
-    .nav-btn { width: 100%; text-align: left; padding: 10px; }
-    div.stButton > button:first-child { text-align: left; width: 100%; } 
-    div.stButton > button:first-child:hover { background: #f0f2f6; color: #ff4b4b; }
+    .metric-card { background-color: #1c2128; border-radius: 10px; padding: 15px; border-left: 5px solid #ff4b4b; color: white; }
+    div.stButton > button:first-child { border-radius: 8px; transition: 0.3s; }
+    .ott-card {
+        padding: 30px;
+        border-radius: 15px;
+        text-align: center;
+        color: white;
+        font-weight: bold;
+        margin-bottom: 10px;
+        border: 2px solid transparent;
+        transition: 0.3s;
+    }
+    .ott-card:hover { border: 2px solid white; transform: scale(1.02); cursor: pointer; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -33,7 +46,7 @@ if 'admin_view' not in st.session_state:
 if 'report_view' not in st.session_state:
     st.session_state['report_view'] = 'Overview'
 
-# ================= 1. TOP LEVEL NAVIGATION =================
+# ================= 1. GATEWAY (LOGIN/REG) =================
 if not is_user_logged_in and not is_admin_logged_in:
     st.sidebar.title("🚪 Gateway")
     role_choice = st.sidebar.radio("Select Module", ["👤 User Module", "🛠️ Admin Module"])
@@ -61,7 +74,7 @@ if not is_user_logged_in and not is_admin_logged_in:
             with c2:
                 reg_email = st.text_input("Email")
                 reg_mobile = st.text_input("Mobile No")
-                reg_country = st.selectbox("Country", ["India", "USA", "UK", "Canada", "Germany"])
+                reg_country = st.selectbox("Country", ["India", "USA", "UK", "Canada", "Germany", "France", "Japan", "Australia"])
             if st.button("Register Now"):
                 res, msg = user_sys.register(reg_name, reg_email, reg_pass, reg_mobile, reg_age, reg_country)
                 if res: st.success(msg)
@@ -76,294 +89,241 @@ if not is_user_logged_in and not is_admin_logged_in:
                 st.session_state['admin_auth'] = True; st.rerun()
             else: st.error("Access Denied")
 
-# ================= 2. USER DASHBOARD =================
+# ================= 2. USER DASHBOARD (OTT HUB) =================
 elif is_user_logged_in:
     st.sidebar.title(f"👋 Hi, {st.session_state['name']}")
-    user_menu = st.sidebar.radio("Menu", ["🏠 Main Menu (Plans)", "⚙️ Settings", "🧾 My Invoices"])
+    user_menu = st.sidebar.radio("Menu", ["🏠 OTT Hub", "⚙️ Settings", "🧾 Billing History"])
     
     if st.sidebar.button("Logout"):
         tracker.log_out(st.session_state['act_id'])
         del st.session_state['user_id']
         st.rerun()
 
-    if user_menu == "🏠 Main Menu (Plans)":
-        st.subheader("💎 Choose Your Subscription")
+    if user_menu == "🏠 OTT Hub":
+        st.title("🎬 Explore Premium Services")
+        ott_data = {
+            "Netflix": {"color": "#E50914", "desc": "Movies, TV shows, and more."},
+            "Amazon Prime": {"color": "#00A8E1", "desc": "Originals, Movies & Free Delivery."},
+            "Disney+ Hotstar": {"color": "#001339", "desc": "Disney, Marvel, Pixar & Live Sports."}
+        }
+        
         c1, c2, c3 = st.columns(3)
-        def plan_card(col, name, price, color, btn_key):
-            with col:
-                st.markdown(f"<div style='background:{color}; padding:20px; border-radius:10px; color:white; text-align:center;'><h3>{name}</h3><h1>₹{price}</h1><p>/month</p></div>", unsafe_allow_html=True)
-                if st.button(f"Buy {name}", key=btn_key):
-                    txt = sub_sys.buy_plan(st.session_state['user_id'], name, price)
-                    st.success("Activated!"); st.download_button("Receipt", txt, "Invoice.txt")
-        plan_card(c1, "Silver", 199, "#6c757d", "btn_s")
-        plan_card(c2, "Gold", 399, "#ffc107", "btn_g")
-        plan_card(c3, "Platinum", 799, "#0d6efd", "btn_p")
+        cols = [c1, c2, c3]
+        for i, (name, info) in enumerate(ott_data.items()):
+            with cols[i]:
+                st.markdown(f"""<div class="ott-card" style="background-color: {info['color']};">
+                    <h2>{name}</h2><p style="font-weight: normal; opacity: 0.9;">{info['desc']}</p></div>""", unsafe_allow_html=True)
+                if st.button(f"View {name} Plans", key=f"select_{name}", use_container_width=True):
+                    st.session_state['selected_ott'] = name
 
-    elif user_menu == "⚙️ Settings":
-        st.subheader("📝 Update Your Profile")
-        curr_data = user_sys.get_user_details(st.session_state['user_id'])
-        with st.form("update_form"):
-            new_name = st.text_input("Full Name", value=curr_data[0])
-            new_email = st.text_input("Email", value=curr_data[1])
-            new_mobile = st.text_input("Mobile No", value=curr_data[2])
-            new_country = st.text_input("Country", value=curr_data[3])
-            new_pass = st.text_input("New Password", type="password")
-            if st.form_submit_button("Save Changes"):
-                p_to_save = new_pass if new_pass else "1234" 
-                res, msg = user_sys.update_profile(st.session_state['user_id'], new_name, new_email, p_to_save, new_mobile, new_country)
-                if res: st.success(msg)
-                else: st.error(msg)
+        if 'selected_ott' in st.session_state:
+            target = st.session_state['selected_ott']
+            st.divider()
+            st.subheader(f"💎 Available Plans for {target}")
+            
+            plans = []
+            if target == "Netflix": 
+                plans = [("Mobile", 149, "480p"), ("Standard", 499, "1080p"), ("Premium", 649, "4K+HDR")]
+            elif target == "Amazon Prime": 
+                plans = [("Lite", 799, "HD"), ("Prime", 999, "All-in-one"), ("Annual", 1499, "Yearly")]
+            elif target == "Disney+ Hotstar": 
+                plans = [("Super", 899, "2 Screens"), ("Prem. Mo", 299, "4K"), ("Prem. Yr", 1499, "4K")]
 
-    elif user_menu == "🧾 My Invoices":
-        st.subheader("📜 Invoice History")
+            pc1, pc2, pc3 = st.columns(3)
+            p_cols = [pc1, pc2, pc3]
+            for i, (p_name, p_price, p_feat) in enumerate(plans):
+                with p_cols[i]:
+                    with st.container(border=True):
+                        st.markdown(f"### {p_name}")
+                        st.markdown(f"## ₹{p_price}")
+                        st.write(f"✅ {p_feat}")
+                        if st.button(f"Get {p_name}", key=f"buy_{target}_{p_name}", type="primary", use_container_width=True):
+                            txt = sub_sys.buy_plan(st.session_state['user_id'], p_name, p_price, target)
+                            st.success(f"Activated {p_name} for {target}!")
+                            st.download_button("📥 Receipt", txt, f"Invoice_{target}.txt")
+
+    elif user_menu == "🧾 Billing History":
+        st.subheader("📜 Subscription History")
         df_inv = sub_sys.get_user_invoices(st.session_state['user_id'])
         if not df_inv.empty:
             st.dataframe(df_inv, use_container_width=True)
-            last_rec = df_inv.iloc[0]
-            inv_txt = sub_sys.generate_invoice_text(st.session_state['user_id'], last_rec['plan_name'], last_rec['amount'], last_rec['start_date'])
-            st.download_button("📥 Download Latest Invoice", inv_txt, f"Invoice.txt")
-        else: st.info("No purchase history found.")
+        else: st.info("No active subscriptions found.")
 
-# ================= 3. ADMIN DASHBOARD (UPDATED) =================
+# ================= 3. ADMIN DASHBOARD =================
 elif is_admin_logged_in:
-    
     with st.sidebar:
         st.title("🛠️ Admin Panel")
         
+        # --- NAVIGATION BUTTONS ---
         if st.button("📊 Analytics Dashboard", use_container_width=True):
             st.session_state['admin_view'] = 'Analytics'
-            st.rerun()
-
+        
         if st.session_state['admin_view'] == 'Analytics':
-            st.markdown("### 📑 Report Selection")
-            report_select = st.radio("Show Report:", ["Overview", "Month-to-Month", "Yearly Sales"], label_visibility="collapsed")
-            st.session_state['report_view'] = report_select
+            st.session_state['report_view'] = st.radio("Show Report:", ["Overview", "Month-to-Month", "Yearly Sales"])
 
-        if st.button("📑 Detailed Reports", use_container_width=True):
-             st.session_state['admin_view'] = 'Comprehensive'
-             st.rerun()
+        if st.button("🤝 Mutual Connections", use_container_width=True):
+            st.session_state['admin_view'] = 'Connections'
+
+        if st.button("📑 Detailed Archive", use_container_width=True):
+            st.session_state['admin_view'] = 'Comprehensive'
 
         if st.button("🗂️ Database Manager", use_container_width=True):
             st.session_state['admin_view'] = 'Database'
-            st.rerun()
 
         if st.button("🚨 Security Audit", use_container_width=True):
             st.session_state['admin_view'] = 'Security'
-            st.rerun()
 
-        st.markdown("---")
+        st.divider()
         if st.button("Logout Admin"):
             del st.session_state['admin_auth']; st.rerun()
 
-    # --- VIEW 1: ANALYTICS ---
+    # --- VIEW: ANALYTICS ---
     if st.session_state['admin_view'] == 'Analytics':
-        st.title("🚀 Executive Analytics")
-        
-        # Unpack values including lifetime revenue
+        st.title("🚀 Business Intelligence")
         curr_rev, prev_rev, growth, last_year_rev, count, lifetime_rev = admin_sys.get_monthly_comparison()
 
         if st.session_state['report_view'] == "Overview":
             st.subheader("📊 General Overview")
             
-            # ROW 1: Immediate Monthly Stats
             m1, m2, m3 = st.columns(3)
             m1.metric("Current Month Revenue", f"₹{curr_rev:,.0f}", f"{growth}% vs Last Month")
             m2.metric("Last Month Revenue", f"₹{prev_rev:,.0f}")
             m3.metric("This Month Sales Count", count)
-            
-            st.write("") # Spacer
-            
-            # ROW 2: The Big Picture (2025 vs Lifetime)
-            b1, b2 = st.columns(2)
-            with b1:
-                st.markdown(f"""
-                    <div style="background-color: #d1e7dd; padding: 20px; border-radius: 10px; border-left: 5px solid #198754;">
-                        <h4 style="color: #198754; margin:0;">Total Revenue (Last Year)</h4>
-                        <h1 style="margin:0;">₹{last_year_rev:,.0f}</h1>
-                    </div>
-                """, unsafe_allow_html=True)
-            with b2:
-                st.markdown(f"""
-                    <div style="background-color: #cfe2ff; padding: 20px; border-radius: 10px; border-left: 5px solid #0d6efd;">
-                        <h4 style="color: #0d6efd; margin:0;">Lifetime Revenue (All Time)</h4>
-                        <h1 style="margin:0;">₹{lifetime_rev:,.0f}</h1>
-                    </div>
-                """, unsafe_allow_html=True)
 
-            st.markdown("---")
+            st.write("") 
             
-            # Trends and Plans
-            c1, c2 = st.columns(2)
-            with c1:
-                 st.markdown("📈 **Revenue Trend**")
-                 df_trend = admin_sys.get_revenue_trend()
-                 if not df_trend.empty:
-                    fig = px.line(df_trend, x='Date', y='Revenue', markers=True, template="plotly_white")
-                    fig.update_traces(line_color='#ff4b4b', line_width=3)
-                    st.plotly_chart(fig, use_container_width=True)
-                 else: st.info("Not enough data for trends.")
-            
-            with c2:
-                st.markdown("🍕 **Plan Popularity**")
+            b1, b2 = st.columns(2)
+            b1.metric("Lifetime Revenue (All Time)", f"₹{lifetime_rev:,.0f}")
+            b2.metric("Last Year Total Sales", f"₹{last_year_rev:,.0f}")
+
+            st.divider()
+
+            g1, g2 = st.columns(2)
+            with g1:
+                st.markdown("📈 **Platform Market Share (Revenue)**")
                 df_subs = admin_sys.get_all_data("subscriptions")
                 if not df_subs.empty:
-                    fig2 = px.pie(df_subs, names='plan_name', hole=0.4, template="plotly_white", color_discrete_sequence=['#C0C0C0', '#FFD700', '#E5E4E2'])
-                    st.plotly_chart(fig2, use_container_width=True)
-                else: st.info("No subscriptions yet.")
-            
-            st.markdown("---")
-            
-            # --- NEW FEATURES (Demographics & Conversion) ---
-            st.subheader("🌍 User Demographics & Conversion")
-            
-            # Fetch Data
-            # NOTE: Ensure you have added get_demographics_data() and get_recent_transactions() to backend.py
-            try:
-                df_country, total_u, paid_u = admin_sys.get_demographics_data()
-                df_recent = admin_sys.get_recent_transactions()
-                
-                # ROW 3: Country & Conversion Charts
-                c3, c4 = st.columns(2)
-                
-                with c3:
-                    st.markdown("**📍 Users by Country**")
-                    if not df_country.empty:
-                        fig_map = px.bar(df_country, x='country', y='count', color='count', template="plotly_white", color_continuous_scale='Viridis')
-                        st.plotly_chart(fig_map, use_container_width=True)
-                    else: st.info("No user data available.")
+                    fig_pie = px.pie(df_subs, names='service_type', values='Revenue', hole=0.5, 
+                                     color_discrete_map={"Netflix": "#E50914", "Amazon Prime": "#00A8E1", "Disney+ Hotstar": "#001339"})
+                    st.plotly_chart(fig_pie, use_container_width=True)
 
-                with c4:
-                    st.markdown("**💰 Conversion Rate (Free vs Paid)**")
-                    if total_u > 0:
-                        free_u = total_u - paid_u
-                        conv_data = pd.DataFrame({
-                            'Status': ['Premium Subscribers', 'Free Users'],
-                            'Count': [paid_u, free_u]
-                        })
-                        fig_conv = px.pie(conv_data, names='Status', values='Count', hole=0.6, color_discrete_sequence=['#0d6efd', '#e9ecef'])
-                        st.plotly_chart(fig_conv, use_container_width=True)
-                        conv_rate = round((paid_u / total_u) * 100, 1)
-                        st.caption(f"🚀 **{conv_rate}%** of your registered users have bought a plan.")
-                    else: st.info("No users registered yet.")
+            with g2:
+                st.markdown("🌍 **Revenue Contribution by Country**")
+                try:
+                    df_u = admin_sys.get_all_data("users")
+                    df_geo = df_u.merge(df_subs, on="user_id")
+                    df_map = df_geo.groupby("country")["Revenue"].sum().reset_index()
+                    fig_bar = px.bar(df_map, x='country', y='Revenue', color='Revenue', template="plotly_white")
+                    st.plotly_chart(fig_bar, use_container_width=True)
+                except: st.info("Geographic data unavailable.")
 
-                # ROW 4: Recent Transactions
-                st.markdown("### 🕒 Recent Purchases")
-                if not df_recent.empty:
-                    st.dataframe(df_recent, use_container_width=True, hide_index=True)
-                else:
-                    st.info("No recent transactions found.")
-                    
-            except AttributeError:
-                st.error("⚠️ Please update backend.py with the new functions (get_demographics_data) to see these charts.")
+            st.divider()
+            
+            with st.container():
+                st.markdown("🚀 **User Conversion Status**")
+                try:
+                    df_country, total_u, paid_u = admin_sys.get_demographics_data()
+                    conv_df = pd.DataFrame({"Status": ["Paid", "Free"], "Count": [paid_u, total_u - paid_u]})
+                    fig_conv = px.pie(conv_df, names="Status", values="Count", hole=0.7, color_discrete_sequence=["#28a745", "#e9ecef"])
+                    st.plotly_chart(fig_conv, use_container_width=True)
+                except: st.info("Conversion data unavailable.")
 
         elif st.session_state['report_view'] == "Month-to-Month":
-            st.subheader("🗓️ Month-to-Month Performance Report")
-            df_month = admin_sys.get_monthly_breakdown()
-            if not df_month.empty:
-                fig_m = px.bar(df_month, x='Month', y='Revenue', text_auto=True, template="plotly_white", color='Revenue', color_continuous_scale='Blues')
-                st.plotly_chart(fig_m, use_container_width=True)
-                st.dataframe(df_month, use_container_width=True)
-            else: st.info("No monthly data available.")
+            st.subheader("🗓️ Monthly Revenue Trends")
+            df_trend = admin_sys.get_monthly_breakdown()
+            if not df_trend.empty:
+                fig = px.line(df_trend, x='Month', y='Revenue', markers=True, line_shape="spline")
+                st.plotly_chart(fig, use_container_width=True)
+                st.dataframe(df_trend, use_container_width=True)
 
         elif st.session_state['report_view'] == "Yearly Sales":
             st.subheader("📅 Yearly Sales Report")
             df_year = admin_sys.get_yearly_breakdown()
             if not df_year.empty:
-                fig_y = px.bar(df_year, x='Year', y='Revenue', text_auto=True, template="plotly_white", color='Revenue', color_continuous_scale='Greens')
+                fig_y = px.bar(df_year, x='Year', y='Revenue', text_auto=True, color='Revenue', color_continuous_scale='Greens')
                 st.plotly_chart(fig_y, use_container_width=True)
-                st.dataframe(df_year, use_container_width=True)
-            else: st.info("No yearly data available.")
 
-    # --- VIEW 2: HISTORICAL ARCHIVE (Detailed Reports) ---
+    # --- VIEW: MUTUAL CONNECTIONS (NEW) ---
+    elif st.session_state['admin_view'] == 'Connections':
+        st.title("🤝 Mutual Connections & Engagement")
+        st.info("Analyze low-engagement users to suggest shared plans.")
+        
+        # --- FILTERS & SORTING ---
+        c1, c2 = st.columns(2)
+        with c1:
+            limit = st.slider("Engagement Threshold (mins)", 10, 300, 60)
+        with c2:
+            # New: Sort by Platform or Plan
+            sort_choice = st.selectbox("Sort List By:", ["Default", "OTT Platform", "Activity (Lowest First)", "Plan Type"])
+
+        df_low = admin_sys.get_low_engagement_users(limit)
+        
+        if not df_low.empty:
+            # 1. Logic for Sorting
+            if sort_choice == "OTT Platform":
+                df_low = df_low.sort_values(by="service_type")
+            elif sort_choice == "Activity (Lowest First)":
+                df_low = df_low.sort_values(by="total_mins", ascending=True)
+            elif sort_choice == "Plan Type":
+                # Assuming 'plan_name' is included in your backend query
+                if 'plan_name' in df_low.columns:
+                    df_low = df_low.sort_values(by="plan_name")
+
+            # 2. Logic for Grouping (Optional: Show only specific OTT)
+            platforms = ["All"] + list(df_low['service_type'].unique())
+            selected_platform = st.multiselect("Filter by Platform:", platforms, default="All")
+            
+            if "All" not in selected_platform:
+                df_low = df_low[df_low['service_type'].isin(selected_platform)]
+
+            # --- DISPLAY ---
+            st.warning(f"Found {len(df_low)} potential matches based on your filters.")
+            st.dataframe(df_low, use_container_width=True)
+            
+            # --- ACTION ---
+            if st.button("📢 Launch Targeted Campaign"):
+                st.success(f"Processing connections for {len(df_low)} users...")
+                # You can add logic here to group people by the same platform!
+        else:
+            st.success("No users found for these criteria.")
+
+    # --- VIEW: COMPREHENSIVE ---
     elif st.session_state['admin_view'] == 'Comprehensive':
-        st.title("📑 Historical Archive & Reports")
+        st.title("📑 Historical Archive")
+        tab_drill, tab_annual = st.tabs(["🔍 Monthly Drill-Down", "📊 Annual Report"])
         
-        # 1. TABS: Switch between Yearly Overview and Monthly Drill-Down
-        tab_archive, tab_annual = st.tabs(["🗓️ Monthly Archive (Drill-Down)", "📊 Annual Comprehensive"])
-        
-        with tab_archive:
-            st.subheader("🔍 Retrieve Fixed Past Records")
-            st.markdown("Select a Year and Month to view the frozen historical data.")
-
-            # Selectors
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                sel_year = st.selectbox("Select Year", ["2024", "2025", "2026"], key="hist_year")
-            with c2:
-                sel_month = st.selectbox("Select Month", [
-                    "January", "February", "March", "April", "May", "June", 
-                    "July", "August", "September", "October", "November", "December"
-                ], key="hist_month")
-            with c3:
-                # st.write("") # Spacer
-                if st.button("📂 Fetch Monthly Report"):
-                    st.session_state['show_history'] = True
-
-            st.divider()
-
-            # Logic to Show Data
-            if st.session_state.get('show_history'):
-                rev, sales, df_hist = admin_sys.get_specific_month_report(sel_year, sel_month)
-                
+        with tab_drill:
+            c1, c2 = st.columns(2)
+            y = c1.selectbox("Year", ["2024", "2025", "2026"])
+            m = c2.selectbox("Month", ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"])
+            if st.button("Fetch Monthly Archive"):
+                rev, sls, df_hist = admin_sys.get_specific_month_report(str(y), m)
                 if not df_hist.empty:
-                    st.success(f"✅ Archive Found: {sel_month} {sel_year}")
-                    
-                    # Metrics
-                    m1, m2 = st.columns(2)
-                    m1.metric("Total Revenue", f"₹{rev}")
-                    m2.metric("Total Sales", sales)
-                    
-                    # Data Table
+                    st.success(f"Records for {m} {y}")
+                    st.metric("Total Revenue", f"₹{rev}")
                     st.dataframe(df_hist, use_container_width=True)
-                    
-                    # CSV Download
-                    csv_data = df_hist.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Download This Report", csv_data, f"Report_{sel_year}_{sel_month}.csv", "text/csv")
-                else:
-                    st.warning(f"⚠️ No records found in the archive for {sel_month} {sel_year}.")
+                else: st.warning("No records found for this period.")
 
         with tab_annual:
-            st.subheader("📅 Full Year Overview")
-            sel_year_comp = st.selectbox("Select Financial Year", [2024, 2025, 2026], index=2, key="comp_year")
-            
-            if st.button(f"Generate Annual Report for {sel_year_comp}", type="primary"):
-                df_comp = admin_sys.get_yearly_comprehensive_report(sel_year_comp)
-                
+            sel_yr = st.selectbox("Select Financial Year", [2024, 2025, 2026], index=1)
+            if st.button("Generate Annual Comprehensive"):
+                df_comp = admin_sys.get_yearly_comprehensive_report(sel_yr)
                 if not df_comp.empty:
-                    st.dataframe(df_comp.style.format({"Revenue (₹)": "₹{:.2f}", "Growth (%)": "{:+.1f}%"}), use_container_width=True)
-                    
-                    csv = df_comp.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Download Annual CSV", csv, f"Annual_Report_{sel_year_comp}.csv", "text/csv")
-                    
-                    st.divider()
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        st.markdown("**User Activity vs Revenue**")
-                        fig_dual = px.bar(df_comp, x='Month', y='Revenue (₹)', color='Active Users', title="Revenue & Traffic")
-                        st.plotly_chart(fig_dual, use_container_width=True)
-                    with c2:
-                        st.markdown("**Plan Sales Distribution**")
-                        df_melt = df_comp.melt(id_vars=['Month'], value_vars=['Silver Sales', 'Gold Sales', 'Platinum Sales'], var_name='Plan', value_name='Count')
-                        fig_sales = px.bar(df_melt, x='Month', y='Count', color='Plan', barmode='group')
-                        st.plotly_chart(fig_sales, use_container_width=True)
-                else:
-                    st.error(f"No data found for {sel_year_comp}.")
+                    st.dataframe(df_comp, use_container_width=True)
+                    fig_annual = px.bar(df_comp, x='Month', y='Revenue (₹)', title=f"Annual Performance {sel_yr}")
+                    st.plotly_chart(fig_annual, use_container_width=True)
 
-    # --- VIEW 3: DATABASE ---
+    # --- VIEW: DATABASE ---
     elif st.session_state['admin_view'] == 'Database':
         st.subheader("🗂️ System Database")
-        tbl = st.selectbox("Select Table to View", ["users", "subscriptions", "user_activity"])
-        df = admin_sys.get_all_data(tbl)
-        st.dataframe(df, use_container_width=True, height=500)
-        if not df.empty:
-            st.download_button("📥 Download CSV", df.to_csv(index=False), f"{tbl}_data.csv")
+        tbl = st.selectbox("View Table", ["users", "subscriptions", "user_activity"])
+        st.dataframe(admin_sys.get_all_data(tbl), use_container_width=True)
 
-    # --- VIEW 4: SECURITY ---
+    # --- VIEW: SECURITY ---
     elif st.session_state['admin_view'] == 'Security':
         st.subheader("🚨 Security Audit")
         risks = admin_sys.detect_security_risks()
         if not risks.empty:
-            st.error(f"⚠️ Detected {len(risks)} Suspicious Activities!")
+            st.error(f"Detected {len(risks)} Suspicious Sessions")
             st.dataframe(risks, use_container_width=True)
-        else:
-            st.success("✅ No Anomalies Detected.")
+        else: st.success("No security anomalies detected.")
